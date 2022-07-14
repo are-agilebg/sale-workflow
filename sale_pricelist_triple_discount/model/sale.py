@@ -68,10 +68,20 @@ class SaleOrderLine(models.Model):
             return
 
         for line in self:
-            line.update(
-                {
-                    "price_subtotal": tools.float_round(
-                        line.price_subtotal, precision_rounding=rule.price_round
-                    )
-                }
+            rounded_price_subtotal = tools.float_round(
+                line.price_subtotal, precision_rounding=rule.price_round
             )
+
+            if current_pricelist.discount_policy == "without_discount":
+                read_rule = rule.read(["price_discount"])[0]
+                if self.discount2:
+                    self.discount = read_rule["price_discount"]
+                    price = line.price_unit * (1 - (line.discount or 0.0) / 100.0)
+                    price = price * line.product_uom_qty
+                    if self.discount3:
+                        price = (price - (price * (self.discount2 / 100))) or 0.0
+                        self.discount3 = 100 - (rounded_price_subtotal / price * 100)
+                    else:
+                        self.discount2 = 100 - (rounded_price_subtotal / price * 100)
+
+            line.update({"price_subtotal": rounded_price_subtotal})
