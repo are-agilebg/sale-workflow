@@ -3,7 +3,7 @@
 # Copyright 2022 Alberto Re - Agile Business Group
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
-from odoo import api, models
+from odoo import api, models, tools
 
 
 class SaleOrderLine(models.Model):
@@ -39,3 +39,39 @@ class SaleOrderLine(models.Model):
         read_rule = rule.read(["discount2", "discount3"])[0]
         self.discount2 = read_rule["discount2"] or 0.00
         self.discount3 = read_rule["discount3"] or 0.00
+
+    @api.depends("discount2", "discount3", "discounting_type")
+    def _compute_amount(self):
+        super(SaleOrderLine, self)._compute_amount()
+
+        current_pricelist = self.order_id.pricelist_id
+        if not (
+            self.product_id
+            and self.product_uom
+            and self.order_id.partner_id
+            and current_pricelist
+            and self.env.user.has_group("product.group_discount_per_so_line")
+        ):
+            return
+
+        list_price = current_pricelist.price_rule_get(
+            self.product_id.id, self.product_uom_qty or 1.0, self.order_id.partner_id.id
+        )
+        rule_id = (
+            list_price.get(current_pricelist.id)
+            and list_price[current_pricelist.id][1]
+            or False
+        )
+        rule = self.env["product.pricelist.item"].browse(rule_id)
+
+        if not rule.price_round:
+            return
+
+        for line in self:
+            line.update(
+                {
+                    "price_subtotal": tools.float_round(
+                        line.price_subtotal, precision_rounding=rule.price_round
+                    )
+                }
+            )
