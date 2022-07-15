@@ -29,10 +29,11 @@ class ProductPricelistItem(models.Model):
         """
         self.ensure_one()
 
-        if (
-            self.pricelist_id.discount_policy == "with_discount"
-            and self.compute_price == "formula"
-        ):
+        if self.compute_price != "formula":
+            return super(ProductPricelistItem, self)._compute_price(
+                price, price_uom, product, quantity, partner
+            )
+        else:
             # Here we save price_round, then we temporarily unset it
             # to ensure super() calculates the price without applying
             # any rounding. We will apply the price_round only to the
@@ -44,14 +45,8 @@ class ProductPricelistItem(models.Model):
             )
             self.price_round = store_price_round
 
-            price = (price - (price * (self.discount2 / 100))) or 0.0
-            price = (price - (price * (self.discount3 / 100))) or 0.0
-            return price
-        else:
-            store_price_round = self.price_round
-            self.price_round = None
-            price = super(ProductPricelistItem, self)._compute_price(
-                price, price_uom, product, quantity, partner
-            )
-            self.price_round = store_price_round
+            if self.pricelist_id.discount_policy == "with_discount":
+                price = (price - (price * (self.discount2 / 100))) or 0.0
+                price = (price - (price * (self.discount3 / 100))) or 0.0
+
             return price
