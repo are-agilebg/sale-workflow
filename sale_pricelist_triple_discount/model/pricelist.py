@@ -27,15 +27,31 @@ class ProductPricelistItem(models.Model):
         application. The unused parameters are there to make the full
         context available for overrides.
         """
-        price = super(ProductPricelistItem, self)._compute_price(
-            price, price_uom, product, quantity, partner
-        )
-
         self.ensure_one()
+
         if (
             self.pricelist_id.discount_policy == "with_discount"
             and self.compute_price == "formula"
         ):
+            # Here we save price_round, then we temporarily unset it
+            # to ensure super() calculates the price without applying
+            # any rounding. We will apply the price_round only to the
+            # subtotal after all discounts have been applied.
+            store_price_round = self.price_round
+            self.price_round = None
+            price = super(ProductPricelistItem, self)._compute_price(
+                price, price_uom, product, quantity, partner
+            )
+            self.price_round = store_price_round
+
             price = (price - (price * (self.discount2 / 100))) or 0.0
             price = (price - (price * (self.discount3 / 100))) or 0.0
-        return price
+            return price
+        else:
+            store_price_round = self.price_round
+            self.price_round = None
+            price = super(ProductPricelistItem, self)._compute_price(
+                price, price_uom, product, quantity, partner
+            )
+            self.price_round = store_price_round
+            return price
