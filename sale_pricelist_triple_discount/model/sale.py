@@ -35,10 +35,11 @@ class SaleOrderLine(models.Model):
             and list_price[current_pricelist.id][1]
             or False
         )
-        rule = self.env["product.pricelist.item"].browse(rule_id)
-        read_rule = rule.read(["discount2", "discount3"])[0]
-        self.discount2 = read_rule["discount2"] or 0.00
-        self.discount3 = read_rule["discount3"] or 0.00
+        if rule_id:
+            rule = self.env["product.pricelist.item"].browse(rule_id)
+            read_rule = rule.read(["discount2", "discount3"])[0]
+            self.discount2 = read_rule["discount2"] or 0.00
+            self.discount3 = read_rule["discount3"] or 0.00
 
     @api.depends(
         "product_uom_qty",
