@@ -40,7 +40,15 @@ class SaleOrderLine(models.Model):
         self.discount2 = read_rule["discount2"] or 0.00
         self.discount3 = read_rule["discount3"] or 0.00
 
-    @api.depends("discount2", "discount3", "discounting_type")
+    @api.depends(
+        "product_uom_qty",
+        "discount",
+        "price_unit",
+        "tax_id",
+        "discount2",
+        "discount3",
+        "discounting_type",
+    )
     def _compute_amount(self):
         super(SaleOrderLine, self)._compute_amount()
 
@@ -83,5 +91,22 @@ class SaleOrderLine(models.Model):
                         self.discount3 = 100 - (rounded_price_subtotal / price * 100)
                     else:
                         self.discount2 = 100 - (rounded_price_subtotal / price * 100)
+
+            taxes = line.tax_id.compute_all(
+                rounded_price_subtotal,
+                line.order_id.currency_id,
+                1,
+                product=line.product_id,
+                partner=line.order_id.partner_shipping_id,
+            )
+            line.update(
+                {
+                    "price_tax": sum(
+                        t.get("amount", 0.0) for t in taxes.get("taxes", [])
+                    ),
+                    "price_total": taxes["total_included"],
+                    "price_subtotal": taxes["total_excluded"],
+                }
+            )
 
             line.update({"price_subtotal": rounded_price_subtotal})
