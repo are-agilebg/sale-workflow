@@ -63,35 +63,38 @@ class SaleOrderLine(models.Model):
         ):
             return
 
-        list_price = current_pricelist.price_rule_get(
-            self.product_id.id, self.product_uom_qty or 1.0, self.order_id.partner_id.id
-        )
-        rule_id = (
-            list_price.get(current_pricelist.id)
-            and list_price[current_pricelist.id][1]
-            or False
-        )
-        rule = self.env["product.pricelist.item"].browse(rule_id)
-
-        if not rule.price_round:
-            return
-
         for line in self:
+
+            list_price = current_pricelist.price_rule_get(
+                line.product_id.id,
+                line.product_uom_qty or 1.0,
+                line.order_id.partner_id.id,
+            )
+            rule_id = (
+                list_price.get(current_pricelist.id)
+                and list_price[current_pricelist.id][1]
+                or False
+            )
+            rule = self.env["product.pricelist.item"].browse(rule_id)
+
+            if not rule.price_round:
+                return
+
             rounded_price_subtotal = tools.float_round(
                 line.price_subtotal, precision_rounding=rule.price_round
             )
 
             if current_pricelist.discount_policy == "without_discount":
                 read_rule = rule.read(["price_discount"])[0]
-                if self.discount2:
-                    self.discount = read_rule["price_discount"]
+                if line.discount2:
+                    line.discount = read_rule["price_discount"]
                     price = line.price_unit * (1 - (line.discount or 0.0) / 100.0)
                     price = price * line.product_uom_qty
-                    if self.discount3:
-                        price = (price - (price * (self.discount2 / 100))) or 0.0
-                        self.discount3 = 100 - (rounded_price_subtotal / price * 100)
+                    if line.discount3:
+                        price = (price - (price * (line.discount2 / 100))) or 0.0
+                        line.discount3 = 100 - (rounded_price_subtotal / price * 100)
                     else:
-                        self.discount2 = 100 - (rounded_price_subtotal / price * 100)
+                        line.discount2 = 100 - (rounded_price_subtotal / price * 100)
 
             taxes = line.tax_id.compute_all(
                 rounded_price_subtotal,
