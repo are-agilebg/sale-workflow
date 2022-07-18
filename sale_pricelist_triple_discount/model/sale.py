@@ -3,7 +3,83 @@
 # Copyright 2022 Alberto Re - Agile Business Group
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
+from functools import partial
+
 from odoo import api, models, tools
+from odoo.tools.misc import formatLang
+
+
+class SaleOrder(models.Model):
+    _inherit = "sale.order"
+
+    def _amount_by_group(self):
+        super(SaleOrder, self)._amount_by_group()
+
+        for order in self:
+            currency = order.currency_id or order.company_id.currency_id
+            fmt = partial(
+                formatLang,
+                self.with_context(lang=order.partner_id.lang).env,
+                currency_obj=currency,
+            )
+            res = {}
+
+            for line in order.order_line:
+                current_pricelist = self.pricelist_id
+                if not (
+                    line.product_id
+                    and line.product_uom
+                    and self.partner_id
+                    and current_pricelist
+                    and self.env.user.has_group("product.group_discount_per_so_line")
+                ):
+                    continue
+
+                list_price = current_pricelist.price_rule_get(
+                    line.product_id.id,
+                    line.product_uom_qty or 1.0,
+                    line.order_id.partner_id.id,
+                )
+                rule_id = (
+                    list_price.get(current_pricelist.id)
+                    and list_price[current_pricelist.id][1]
+                    or False
+                )
+                rule = self.env["product.pricelist.item"].browse(rule_id)
+
+                if not rule.price_round:
+                    continue
+
+                rounded_price_subtotal = tools.float_round(
+                    line.price_subtotal, precision_rounding=rule.price_round
+                )
+                taxes = line.tax_id.compute_all(
+                    rounded_price_subtotal,
+                    line.order_id.currency_id,
+                    1,
+                    product=line.product_id,
+                    partner=line.order_id.partner_shipping_id,
+                )["taxes"]
+
+                for tax in line.tax_id:
+                    group = tax.tax_group_id
+                    res.setdefault(group, {"amount": 0.0, "base": 0.0})
+                    for t in taxes:
+                        if t["id"] == tax.id or t["id"] in tax.children_tax_ids.ids:
+                            res[group]["amount"] += t["amount"]
+                            res[group]["base"] += t["base"]
+            res = sorted(res.items(), key=lambda l: l[0].sequence)
+            order.amount_by_group = [
+                (
+                    entry[0].name,
+                    entry[1]["amount"],
+                    entry[1]["base"],
+                    fmt(entry[1]["amount"]),
+                    fmt(entry[1]["base"]),
+                    len(res),
+                )
+                for entry in res
+            ]
 
 
 class SaleOrderLine(models.Model):
